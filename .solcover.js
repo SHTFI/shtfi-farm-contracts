@@ -3,14 +3,7 @@
 // https://github.com/sc-forks/solidity-coverage/blob/master/HARDHAT_README.md#usage
 
 module.exports = {
-  skipFiles: [
-    "libs",
-    "libs",
-    "libs",
-    "SyrupBar.sol",
-    "ShitToken.sol",
-    "Timelock.sol",
-  ],
+  skipFiles: [],
   measureStatementCoverage: false,
   measureFunctionCoverage: true,
 };

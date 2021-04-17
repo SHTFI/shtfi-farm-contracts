@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.6.8;
+pragma solidity >=0.8.3;
 
-import '@pancakeswap/pancake-swap-lib/contracts/math/SafeMath.sol';
-import '@pancakeswap/pancake-swap-lib/contracts/token/BEP20/IBEP20.sol';
-import '@pancakeswap/pancake-swap-lib/contracts/token/BEP20/SafeBEP20.sol';
-import '@pancakeswap/pancake-swap-lib/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/utils/math/SafeMath.sol';
+import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
 
 import "./ShitToken.sol";
 
@@ -17,57 +17,39 @@ import "./ShitToken.sol";
  */
 contract ShitFarm is Ownable {
     using SafeMath for uint256;
-    using SafeBEP20 for IBEP20;
+    using SafeERC20 for IERC20;
 
     // Info of each user.
     struct UserInfo {
         uint256 amount;         // How many tokens has the user staked.
         uint256 totalRewards;   // Record of the current user's total rewards
         uint256 lastClaim;       // Block of the user's last clam
-
-        /**
-                In order to work out each pool's reward allocation we do the following:
-                
-                To find the amount of SHIT to mint in each block we do the following:
-
-                (current block number - lastBlockReward) * SHIT per block
-
-                Find the value (V) of each allocation point (in SHIT):
-
-                SHIT to mint * Total contract allocation points / Total contract allocation points
-
-                Then multiply V by the pool's allocation points:
-
-                V * Pool allocation points
-
-                It's not perfect, but it works.
-        */
     }
 
     // Info of each pool.
     struct PoolInfo {
-        IBEP20 stakedToken;         // Address of the staked token contract
+        IERC20 stakedToken;         // Address of the staked token contract
         uint256 stakedBalance;      // Get pool's balance of staked tokens -- So staked shit isn't mix with rewarded shit
         uint256 allocPoint;         // How many allocation points assigned to this pool. SHITs to distribute per block.
-        uint256 startBlock;
-        uint256 shitAlloc;
-        uint256 shitPerBlock;
+        uint256 startBlock;         // The block which the pool's mining starts
+        uint256 shitAlloc;          // The about of SHIT allocated to the pool
+        uint256 shitPerBlock;       // The amount of shit per block this pool receives
     }
 
     // The SHIT TOKEN!
     ShitToken public shit;
     // Last block number that SHITs distribution occurs.
-    uint256 public lastRewardBlock;    
+    uint256 public lastRewardBlock;
     // Dev address.
     address public devaddr;
     // SHIT tokens created per block.
     uint256 public shitPerBlock;
-    // Bonus muliplier for early shit makers.
+    // Bonus multiplier for early shit makers.
     uint256 public BONUS_MULTIPLIER = 1;
     // Amount of shit staked in the shit pool
     uint256 public totalShitStaked;
     // Amount of SHIT each pool's allocation point is worth
-    uint256 public shitPerAllocPoint; 
+    uint256 public shitPerAllocPoint;
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes tokens.
@@ -84,7 +66,7 @@ contract ShitFarm is Ownable {
         ShitToken _shit,
         uint256 _shitPerBlock,
         uint256 _startBlock
-    ) public {
+    ) {
         shit = _shit;
         devaddr = msg.sender;
         shitPerBlock = _shitPerBlock;
@@ -112,7 +94,7 @@ contract ShitFarm is Ownable {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _stakedToken, uint256 _start, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IERC20 _stakedToken, uint256 _start, bool _withUpdate) public onlyOwner {
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -122,7 +104,7 @@ contract ShitFarm is Ownable {
             stakedBalance: 0,
             startBlock: _start,
             shitAlloc: 0,
-            shitPerBlock:0 
+            shitPerBlock:0
         }));
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
     }
@@ -139,6 +121,21 @@ contract ShitFarm is Ownable {
         }
     }
 
+    // Internal function to get pending Shit rewards
+    function _pendingShit(
+        uint256 _poolStakedBalance,
+        uint256 _poolShitPerBlock,
+        uint256 _userBalance,
+        uint256 _userClaimableBlocks
+        ) internal pure returns(uint256) {
+        // If there isnt any staked balance there cant be any rewards
+        if ( _poolStakedBalance == 0 ) {
+            return 0;
+        }
+        uint256 pending = _poolShitPerBlock.mul(_userClaimableBlocks).mul(_userBalance).div(_poolStakedBalance);
+        return pending;
+    }
+
     // View function to see pending SHITs on frontend.
     function pendingShit(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
@@ -147,11 +144,8 @@ contract ShitFarm is Ownable {
         if ( pool.stakedBalance == 0 ) {
             return 0;
         }
-          // shit for this pool
-        // OLD -- uint256 poolBalance = pool.allocPoint.mul(shitPerAllocPoint);
-        // OLD -- uint256 pending = user.amount.mul(poolBalance).div(pool.stakedBalance);
-        uint256 claimableBlocks = block.number.sub(user.lastClaim == 0 ? pool.startBlock : user.lastClaim);
-        uint256 pending = pool.shitPerBlock.mul(claimableBlocks).mul(user.amount).div(pool.stakedBalance);
+        uint256 _claimableBlocks = block.number.sub(user.lastClaim == 0 ? pool.startBlock : user.lastClaim);
+        uint256 pending = _pendingShit(pool.stakedBalance, pool.shitPerBlock, user.amount, _claimableBlocks);
         return pending;
     }
 
@@ -173,7 +167,7 @@ contract ShitFarm is Ownable {
         uint256 blocksPassed = block.number.sub(lastRewardBlock);
         // Block Reward
         uint256 blockReward = blocksPassed.mul(shitPerBlock);
-        // availableshit / total alloc
+        // available shit / total alloc
         uint256 shitInContract = shit.balanceOf(address(this));
         // SHIT staked in contract
         uint256 shitStaked = poolInfo[0].stakedBalance;
@@ -181,11 +175,12 @@ contract ShitFarm is Ownable {
         uint256 availableShit = shitInContract.sub(shitStaked);
         // updated shit per allocation point
         shitPerAllocPoint = availableShit.add(blockReward).div(totalAllocPoint);
+        // Set the amount of shit this pool will receive per block
         pool.shitPerBlock = shitPerBlock.mul(pool.allocPoint).div(totalAllocPoint);
         // Mint shit if there is any
         if ( blockReward > 0 ) {
-            // Mint some shit
-            shit.mint(address(this), blockReward);
+            // Mint the shit which is owed to the current pool
+            shit.mint(address(this), blockReward.mul(pool.allocPoint).div(totalAllocPoint));
             // Update the current pool's allocation of shit
             pool.shitAlloc = shitPerAllocPoint.mul(pool.allocPoint);
             // Update last reward block
@@ -207,19 +202,13 @@ contract ShitFarm is Ownable {
             // Their first claimable block is the start block
             user.lastClaim = block.number;
         }
-        // Get user info object
         // Update the pool
         updatePool(_pid);
-        // Can only claim every 10 blocks
         // Claim rewards if user is invested
-        if (user.amount > 0) { 
-            // shit for this pool
-            uint256 poolBalance = pool.allocPoint.mul(shitPerAllocPoint);
-            // since last user claim
-            uint256 claimableBlocks = block.number.sub(user.lastClaim);
-            // users share per block
-            uint256 pending = pool.shitPerBlock.mul(claimableBlocks).mul(user.amount).div(pool.stakedBalance);
-            // Check if oending balance is more than 0
+        if (user.amount > 0) {
+            uint256 _claimableBlocks = block.number.sub(user.lastClaim == 0 ? pool.startBlock : user.lastClaim);
+            uint256 pending = _pendingShit(pool.stakedBalance, pool.shitPerBlock, user.amount, _claimableBlocks);
+            // Check if pending balance is more than 0
             if(pending > 0) {
                 // Update user's total rewards
                 user.totalRewards = user.totalRewards.add(pending);
@@ -249,16 +238,12 @@ contract ShitFarm is Ownable {
         UserInfo storage user = userInfo[_pid][msg.sender];
         // Ensure the user is not trying to withdraw more than they have deposited.
         require(user.amount >= _amount, "SHIT FARM: Not enough staked");
-        // Update the pool 
+        // Update the pool
         updatePool(_pid);
        // Claim rewards if user is invested
         if (user.amount > 0 && user.lastClaim < block.number) {
-            // shit for this pool
-            uint256 poolBalance = pool.allocPoint.mul(shitPerAllocPoint);
-            // since last user claim
-            uint256 claimableBlocks = block.number.sub(user.lastClaim);
-            // users share per block
-            uint256 pending = pool.shitPerBlock.mul(claimableBlocks).mul(user.amount).div(pool.stakedBalance);
+            uint256 _claimableBlocks = block.number.sub(user.lastClaim == 0 ? pool.startBlock : user.lastClaim);
+            uint256 pending = _pendingShit(pool.stakedBalance, pool.shitPerBlock, user.amount, _claimableBlocks);
             // Check if oending balance is more than 0
             if(pending > 0) {
                 // Update user's total rewards
