@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity  >=0.6.8;
+pragma solidity  >=0.8.3;
 
-import "@pancakeswap/pancake-swap-lib/contracts/token/BEP20/BEP20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 // ShitToken with Governance.
-contract ShitToken is BEP20('Shit Token', 'SHIT') {
+contract ShitToken is ERC20('Shit Token', 'SHIT'), Ownable {
 
     // Address of the farming contract
     address public farmAddress;

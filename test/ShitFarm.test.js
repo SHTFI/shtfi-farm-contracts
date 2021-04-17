@@ -244,7 +244,6 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     await this.farm.deposit(1, "50", { from: minter });
     // Go forward 10 blocks -- Shit pool should have 66 shit and mock pool should have 33
     await time.advanceBlockTo(261);
-
     // Withdraw our stake
     await this.farm.withdraw(1, "50", { from: minter });
     // Check shit has been received and mock returned
