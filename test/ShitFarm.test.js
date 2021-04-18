@@ -76,6 +76,8 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
         from: minter,
       }
     );
+    // Set the farm contract to the shit token
+    this.shit.setFarm(this.farm.address, { from: minter });
     // Add the MOCK farm
     await this.farm.add(2, this.mock.address, 100, true, { from: minter });
     // Approve farm to spend 50 MOCK
@@ -104,6 +106,8 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
         from: minter,
       }
     );
+    // Set the farm contract to the shit token
+    this.shit.setFarm(this.farm.address, { from: minter });
     // Add the MOCK farm
     await this.farm.add(50, this.mock.address, 120, true, { from: minter });
     // Approve farm to spend 50 MOCK
