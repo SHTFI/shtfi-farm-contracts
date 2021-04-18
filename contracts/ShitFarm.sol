@@ -34,6 +34,7 @@ contract ShitFarm is Ownable {
         uint256 startBlock;         // The block which the pool's mining starts
         uint256 shitAlloc;          // The about of SHIT allocated to the pool
         uint256 shitPerBlock;       // The amount of shit per block this pool receives
+        uint256 lastRewardBlock;    // Last block the pool received rewards on
     }
 
     // The SHIT TOKEN!
@@ -41,7 +42,7 @@ contract ShitFarm is Ownable {
     // Last block number that SHITs distribution occurs.
     uint256 public lastRewardBlock;
     // Dev address.
-    address public devaddr;
+    address public devAddr;
     // SHIT tokens created per block.
     uint256 public shitPerBlock;
     // Bonus multiplier for early shit makers.
@@ -68,7 +69,7 @@ contract ShitFarm is Ownable {
         uint256 _startBlock
     ) {
         shit = _shit;
-        devaddr = msg.sender;
+        devAddr = msg.sender;
         shitPerBlock = _shitPerBlock;
 
         // Initial staking pool
@@ -78,9 +79,9 @@ contract ShitFarm is Ownable {
             stakedBalance: 0,
             startBlock: _startBlock,
             shitAlloc: 0,
-            shitPerBlock: 0
+            shitPerBlock: 0,
+            lastRewardBlock: _startBlock
         }));
-        lastRewardBlock = _startBlock;
         totalAllocPoint = 100;
     }
 
@@ -94,7 +95,7 @@ contract ShitFarm is Ownable {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IERC20 _stakedToken, uint256 _start, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IERC20 _stakedToken, uint256 _startBlock, bool _withUpdate) public onlyOwner {
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -102,9 +103,10 @@ contract ShitFarm is Ownable {
             stakedToken: _stakedToken,
             allocPoint: _allocPoint,
             stakedBalance: 0,
-            startBlock: _start,
+            startBlock: _startBlock,
             shitAlloc: 0,
-            shitPerBlock:0
+            shitPerBlock:0,
+            lastRewardBlock: _startBlock
         }));
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
     }
@@ -128,7 +130,7 @@ contract ShitFarm is Ownable {
         uint256 _userBalance,
         uint256 _userClaimableBlocks
         ) internal pure returns(uint256) {
-        // If there isnt any staked balance there cant be any rewards
+        // If there isn't any staked balance there cant be any rewards
         if ( _poolStakedBalance == 0 ) {
             return 0;
         }
@@ -140,7 +142,7 @@ contract ShitFarm is Ownable {
     function pendingShit(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        // If there isnt any staked balance there cant be any rewards
+        // If there isn't any staked balance there cant be any rewards
         if ( pool.stakedBalance == 0 ) {
             return 0;
         }
@@ -157,14 +159,20 @@ contract ShitFarm is Ownable {
         }
     }
 
+    function _mintPoolBlockReward(uint256 _totalBlockReward, uint256 _poolAllocPoints) private {
+        // Mint the correct amount of SHIt for the pool which caused the function to be called
+        shit.mint(address(this), _totalBlockReward.mul(_poolAllocPoints).div(totalAllocPoint));
+    }
+
     // Update reward variables of the given pool to be up-to-date.
     function updatePool(uint256 _pid) public {
-        if ( block.number <= lastRewardBlock) {
+        PoolInfo storage pool = poolInfo[_pid];
+        // Has the pool started earning yet?
+        if ( block.number <= pool.lastRewardBlock) {
             return;
         }
-        PoolInfo storage pool = poolInfo[_pid];
-        // blocks passed since Mnining started
-        uint256 blocksPassed = block.number.sub(lastRewardBlock);
+        // blocks passed since last reward for this pool
+        uint256 blocksPassed = block.number.sub(pool.lastRewardBlock);
         // Block Reward
         uint256 blockReward = blocksPassed.mul(shitPerBlock);
         // available shit / total alloc
@@ -179,12 +187,12 @@ contract ShitFarm is Ownable {
         pool.shitPerBlock = shitPerBlock.mul(pool.allocPoint).div(totalAllocPoint);
         // Mint shit if there is any
         if ( blockReward > 0 ) {
-            // Mint the shit which is owed to the current pool
-            shit.mint(address(this), blockReward.mul(pool.allocPoint).div(totalAllocPoint));
+            // Mint the block reward for this pool
+            _mintPoolBlockReward(blockReward, pool.allocPoint);
             // Update the current pool's allocation of shit
             pool.shitAlloc = shitPerAllocPoint.mul(pool.allocPoint);
-            // Update last reward block
-            lastRewardBlock = block.number;
+            // Update the last reward block for this pool
+            pool.lastRewardBlock = block.number;
         }
     }
 
@@ -288,8 +296,8 @@ contract ShitFarm is Ownable {
     }
 
     // Update dev address by the previous dev.
-    function dev(address _devaddr) public {
-        require(msg.sender == devaddr, "dev: wut?");
-        devaddr = _devaddr;
+    function dev(address _devAddr) public {
+        require(msg.sender == devAddr, "dev: wut?");
+        devAddr = _devAddr;
     }
 }
