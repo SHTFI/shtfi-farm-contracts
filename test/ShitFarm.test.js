@@ -34,7 +34,7 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
       return {
         stakedToken: pool.stakedToken.toString(),
         allocPoint: pool.allocPoint.toString(),
-        lastRewardBlock: (await this.farm.lastRewardBlock()).toString(),
+        lastRewardBlock: pool.lastRewardBlock.toString(),
         stakedBalance: pool.stakedBalance.toString(),
         shitAllocation: pool.shitAlloc.toString(),
         shitPerBlock: pool.shitPerBlock.toString(),
@@ -323,5 +323,73 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     user = await this.userInfo(1, minter);
     expect(user.totalRewards).equal("69");
     expect((await this.shit.balanceOf(minter)).toString()).equal("69");
+  });
+
+  it("cant deposit when locked", async () => {
+    // Create Shit Token
+    this.shit = await ShitToken.new({ from: minter });
+    // Redeploy the farm so we can ensure it is on the correct block.
+    this.farm = await ShitFarm.new(this.shit.address, "2", 500, {
+      from: minter,
+    });
+    // Set the farm contract on the Shit Token contract
+    await this.shit.setFarm(this.farm.address, { from: minter });
+    // Get some MOCK to stake and get SHIT
+    await this.farm.add(50, this.mock.address, 500, true, { from: minter });
+    // Farm starts at block 300
+    await this.mock.approve(this.farm.address, "500", {
+      from: minter,
+    });
+
+    // Go to block 300 so we can deposit our shit
+    await time.advanceBlockTo(500);
+    // Deposit some shit
+    await this.farm.deposit(1, "50", { from: minter });
+    // Lock the farm contract
+    await this.farm.endMining({ from: minter });
+    try {
+      // Deposit should now fail
+      await this.farm.deposit(1, "50", { from: minter });
+    } catch (error) {
+      expect(error.message).equal(
+        "VM Exception while processing transaction: revert ERROR: FARMING PAUSED"
+      );
+    }
+  });
+
+  it("can withdraw and claim rewards when locked", async () => {
+    // Create Shit Token
+    this.shit = await ShitToken.new({ from: minter });
+    // Redeploy the farm so we can ensure it is on the correct block.
+    this.farm = await ShitFarm.new(
+      this.shit.address,
+      "200000000000000000",
+      550,
+      {
+        from: minter,
+      }
+    );
+    // Set the farm contract on the Shit Token contract
+    await this.shit.setFarm(this.farm.address, { from: minter });
+    // Get some MOCK to stake and get SHIT
+    await this.farm.add(50, this.mock.address, 550, true, { from: minter });
+    // Farm starts at block 300
+    await this.mock.approve(this.farm.address, "500", {
+      from: minter,
+    });
+
+    // Go to block 300 so we can deposit our shit
+    await time.advanceBlockTo(550);
+    // Deposit some shit
+    await this.farm.deposit(1, "50", { from: minter });
+    // Go to block 300 so we can deposit our shit
+    await time.advanceBlockTo(559);
+    // Lock the farm contract
+    await this.farm.endMining({ from: minter });
+    // Withdraw user's liquidity
+    await this.farm.withdraw(1, "50", { from: minter });
+    expect(parseInt((await this.shit.balanceOf(minter)).toString())).equal(
+      666666666666666660
+    );
   });
 });

@@ -39,24 +39,20 @@ contract ShitFarm is Ownable {
 
     // The SHIT TOKEN!
     ShitToken public shit;
-    // Last block number that SHITs distribution occurs.
-    uint256 public lastRewardBlock;
     // Dev address.
     address public devAddr;
     // SHIT tokens created per block.
     uint256 public shitPerBlock;
     // Bonus multiplier for early shit makers.
     uint256 public BONUS_MULTIPLIER = 1;
-    // Amount of shit staked in the shit pool
-    uint256 public totalShitStaked;
-    // Amount of SHIT each pool's allocation point is worth
-    uint256 public shitPerAllocPoint;
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes tokens.
     mapping (uint256 => mapping (address => UserInfo)) public userInfo;
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
+    // Is the contract locked?
+    bool public currentlyActive = true;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -85,6 +81,11 @@ contract ShitFarm is Ownable {
         totalAllocPoint = 100;
     }
 
+    modifier onlyActive () {
+        require(currentlyActive == true, "ERROR: FARMING PAUSED");
+        _;
+    }
+
     function updateMultiplier(uint256 multiplierNumber) public onlyOwner {
         BONUS_MULTIPLIER = multiplierNumber;
     }
@@ -93,8 +94,7 @@ contract ShitFarm is Ownable {
         return poolInfo.length;
     }
 
-    // Add a new lp to the pool. Can only be called by the owner.
-    // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
+    // Add a new staking pool. Can only be called by the owner
     function add(uint256 _allocPoint, IERC20 _stakedToken, uint256 _startBlock, bool _withUpdate) public onlyOwner {
         if (_withUpdate) {
             massUpdatePools();
@@ -130,10 +130,6 @@ contract ShitFarm is Ownable {
         uint256 _userBalance,
         uint256 _userClaimableBlocks
         ) internal pure returns(uint256) {
-        // If there isn't any staked balance there cant be any rewards
-        if ( _poolStakedBalance == 0 ) {
-            return 0;
-        }
         uint256 pending = _poolShitPerBlock.mul(_userClaimableBlocks).mul(_userBalance).div(_poolStakedBalance);
         return pending;
     }
@@ -159,13 +155,13 @@ contract ShitFarm is Ownable {
         }
     }
 
-    function _mintPoolBlockReward(uint256 _totalBlockReward, uint256 _poolAllocPoints) private {
+    function _mintPoolBlockReward(uint256 _amountToMint) private {
         // Mint the correct amount of SHIt for the pool which caused the function to be called
-        shit.mint(address(this), _totalBlockReward.mul(_poolAllocPoints).div(totalAllocPoint));
+        shit.mint(address(this), _amountToMint.mul(BONUS_MULTIPLIER));
     }
 
     // Update reward variables of the given pool to be up-to-date.
-    function updatePool(uint256 _pid) public {
+    function updatePool(uint256 _pid) public onlyActive {
         PoolInfo storage pool = poolInfo[_pid];
         // Has the pool started earning yet?
         if ( block.number <= pool.lastRewardBlock) {
@@ -173,31 +169,25 @@ contract ShitFarm is Ownable {
         }
         // blocks passed since last reward for this pool
         uint256 blocksPassed = block.number.sub(pool.lastRewardBlock);
-        // Block Reward
+        // Block Reward for all pools
         uint256 blockReward = blocksPassed.mul(shitPerBlock);
-        // available shit / total alloc
-        uint256 shitInContract = shit.balanceOf(address(this));
-        // SHIT staked in contract
-        uint256 shitStaked = poolInfo[0].stakedBalance;
-        // Amount of shit available for rewards in this pool
-        uint256 availableShit = shitInContract.sub(shitStaked);
-        // updated shit per allocation point
-        shitPerAllocPoint = availableShit.add(blockReward).div(totalAllocPoint);
+        // Block reward for the current pool
+        uint256 blockRewardForPool = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
         // Set the amount of shit this pool will receive per block
         pool.shitPerBlock = shitPerBlock.mul(pool.allocPoint).div(totalAllocPoint);
         // Mint shit if there is any
-        if ( blockReward > 0 ) {
+        if ( blockRewardForPool > 0 ) {
             // Mint the block reward for this pool
-            _mintPoolBlockReward(blockReward, pool.allocPoint);
+            _mintPoolBlockReward(blockRewardForPool);
             // Update the current pool's allocation of shit
-            pool.shitAlloc = shitPerAllocPoint.mul(pool.allocPoint);
+            pool.shitAlloc = pool.shitAlloc.add(blockRewardForPool);
             // Update the last reward block for this pool
             pool.lastRewardBlock = block.number;
         }
     }
 
     // Deposit LP tokens to MasterChef for SHIT allocation.
-    function deposit(uint256 _pid, uint256 _amount) public {
+    function deposit(uint256 _pid, uint256 _amount) public onlyActive {
         // Get the pool object
         PoolInfo storage pool = poolInfo[_pid];
         // Check the pool is open before we allow deposits
@@ -224,6 +214,8 @@ contract ShitFarm is Ownable {
                 user.lastClaim = block.number;
                 // Transfer rewards
                 safeShitTransfer(msg.sender, pending);
+                // Update pool's shit balance
+                pool.shitAlloc = pool.shitAlloc.sub(pending);
                 // Emit claim event
                 emit ClaimRewards(msg.sender, _pid, pending);
             }
@@ -246,13 +238,16 @@ contract ShitFarm is Ownable {
         UserInfo storage user = userInfo[_pid][msg.sender];
         // Ensure the user is not trying to withdraw more than they have deposited.
         require(user.amount >= _amount, "SHIT FARM: Not enough staked");
-        // Update the pool
-        updatePool(_pid);
+        // Update the pool if mining is currently active
+        if (currentlyActive == true ) {
+            // Update the pool
+            updatePool(_pid);
+        }
        // Claim rewards if user is invested
         if (user.amount > 0 && user.lastClaim < block.number) {
             uint256 _claimableBlocks = block.number.sub(user.lastClaim == 0 ? pool.startBlock : user.lastClaim);
             uint256 pending = _pendingShit(pool.stakedBalance, pool.shitPerBlock, user.amount, _claimableBlocks);
-            // Check if oending balance is more than 0
+            // Check if pending balance is more than 0
             if(pending > 0) {
                 // Update user's total rewards
                 user.totalRewards = user.totalRewards.add(pending);
@@ -260,6 +255,8 @@ contract ShitFarm is Ownable {
                 user.lastClaim = block.number;
                 // Transfer rewards
                 safeShitTransfer(msg.sender, pending);
+                // Update pool's shit balance
+                pool.shitAlloc = pool.shitAlloc.sub(pending);
                 // Emit claim event
                 emit ClaimRewards(msg.sender, _pid, pending);
             }
@@ -295,9 +292,27 @@ contract ShitFarm is Ownable {
         shit.transfer(_to, _amount);
     }
 
+    function endMining () public onlyOwner {
+        // Update all the pools before we end mining so that user rewards are up to date
+        massUpdatePools();
+        // End the mining period
+        currentlyActive = false;
+    }
+
     // Update dev address by the previous dev.
     function dev(address _devAddr) public {
         require(msg.sender == devAddr, "dev: wut?");
         devAddr = _devAddr;
+    }
+
+    // Allows dev to set a new farm contract which can mint SHIT
+    // Some safe guards have been taken but an element of trust is required as long as this
+    // exists. Ideally we need a DAO to be placed here which will allow the community
+    // to have complete control of the shit token.
+    // An option to get around this is by capping the total supply of SHIT.
+    function migrateShitToken (address _newFarm) public onlyOwner {
+        require(_newFarm != msg.sender, "ERROR: ADDRESS SHOULD BE NEW FARM");
+        require(_newFarm != devAddr, "ERROR: ADDRESS SHOULD BE NEW FARM");
+        shit.setFarm(_newFarm);
     }
 }
