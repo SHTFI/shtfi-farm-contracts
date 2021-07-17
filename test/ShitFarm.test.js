@@ -23,21 +23,21 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
         amount: userInfo.amount.toString(),
         totalRewards: userInfo.totalRewards.toString(),
         block: await web3.eth.getBlockNumber(),
-        poolId: _pid,
+        farmId: _pid,
         lastClaim: userInfo.lastClaim.toString(),
         pendingShit: (await this.farm.pendingShit(_pid, _address)).toString(),
       };
     };
 
-    this.poolInfo = async (pid) => {
-      const pool = await this.farm.poolInfo(pid);
+    this.farmInfo = async (pid) => {
+      const farm = await this.farm.farmInfo(pid);
       return {
-        stakedToken: pool.stakedToken.toString(),
-        allocPoint: pool.allocPoint.toString(),
-        lastRewardBlock: pool.lastRewardBlock.toString(),
-        stakedBalance: pool.stakedBalance.toString(),
-        shitAllocation: pool.shitAlloc.toString(),
-        shitPerBlock: pool.shitPerBlock.toString(),
+        stakedToken: farm.stakedToken.toString(),
+        allocPoint: farm.allocPoint.toString(),
+        lastRewardBlock: farm.lastRewardBlock.toString(),
+        stakedBalance: farm.stakedBalance.toString(),
+        shitAllocation: farm.shitAlloc.toString(),
+        shitPerBlock: farm.shitPerBlock.toString(),
       };
     };
 
@@ -60,8 +60,8 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     );
     // Add farm farm with 1 allocation point and make it update
     await this.farm.add(1, this.mock.address, 10, true, { from: minter });
-    const poolInfo = await this.farm.poolInfo(1);
-    expect(poolInfo.stakedToken.toString()).equal(this.mock.address);
+    const farmInfo = await this.farm.farmInfo(1);
+    expect(farmInfo.stakedToken.toString()).equal(this.mock.address);
   });
 
   it("can deposit new farm", async () => {
@@ -158,7 +158,7 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     await time.advanceBlockTo(150);
     // Deposit some shit
     this.farm.deposit(1, "10000000000000000000", { from: minter });
-    // Go forward 10 blocks -- Shit pool should have 66 shit and mock pool should have 33
+    // Go forward 10 blocks -- Shit farm should have 66 shit and mock farm should have 33
     await time.advanceBlockTo(159);
     // deposit 0 MOCK to claim our SHiT reward
     await this.farm.deposit(1, 0, { from: minter });
@@ -168,10 +168,10 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     });
     // Deposit 33 Shit
     //await this.farm.deposit(0, "33000000000000000000", { from: minter });
-    //const poolInfo = await this.poolInfo(0);
+    //const farmInfo = await this.farmInfo(0);
     //const userInfo = await this.userInfo(0, minter);
     //expect(userInfo.amount).equal("33000000000000000000");
-    //expect(poolInfo.stakedBalance).equal("33000000000000000000");
+    //expect(farmInfo.stakedBalance).equal("33000000000000000000");
   });
 
   it("can have multiple stakers", async () => {
@@ -214,7 +214,7 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     await this.farm.deposit(1, 0, { from: minter });
     await this.farm.deposit(1, 0, { from: alice });
     await this.farm.deposit(1, 0, { from: bob });
-    // All users share 1/3 of the pool which should have a balance of 33
+    // All users share 1/3 of the farm which should have a balance of 33
     // This means each staker should receive 11 tokens
     expect((await this.shit.balanceOf(minter)).toString()).equal(
       "11111111111111111110"
@@ -246,7 +246,7 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     await time.advanceBlockTo(250);
     // Deposit some shit
     await this.farm.deposit(1, "50", { from: minter });
-    // Go forward 10 blocks -- Shit pool should have 66 shit and mock pool should have 33
+    // Go forward 10 blocks -- Shit farm should have 66 shit and mock farm should have 33
     await time.advanceBlockTo(261);
     // Withdraw our stake
     await this.farm.withdraw(1, "50", { from: minter });
@@ -292,7 +292,7 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     await time.advanceBlockTo(300);
     // Deposit some shit
     await this.farm.deposit(1, "50", { from: minter });
-    // Go forward 10 blocks -- Shit pool should have 66 shit and mock pool should have 33
+    // Go forward 10 blocks -- Shit farm should have 66 shit and mock farm should have 33
     await time.advanceBlockTo(311);
 
     // Withdraw our stake
@@ -391,5 +391,37 @@ contract("ShitFarm", ([alice, bob, carol, dev, minter]) => {
     expect(parseInt((await this.shit.balanceOf(minter)).toString())).equal(
       666666666666666660
     );
+  });
+
+  it("can get farm id", async () => {
+    // Create Shit Token
+    this.shit = await ShitToken.new({ from: minter });
+    // Redeploy the farm so we can ensure it is on the correct block.
+    this.farm = await ShitFarm.new(
+      this.shit.address,
+      "200000000000000000",
+      550,
+      {
+        from: minter,
+      }
+    );
+    // Set the farm contract on the Shit Token contract
+    await this.shit.setFarm(this.farm.address, { from: minter });
+    // Get some MOCK to stake and get SHIT
+    await this.farm.add(50, this.mock.address, 550, true, { from: minter });
+    // Farm starts at block 300
+    await this.mock.approve(this.farm.address, "500", {
+      from: minter,
+    });
+
+    const shitFarmId = (
+      await this.farm.getFarmId(this.shit.address)
+    ).toString();
+    const mockFarmId = (
+      await this.farm.getFarmId(this.mock.address)
+    ).toString();
+
+    expect(shitFarmId).equal("0");
+    expect(mockFarmId).equal("1");
   });
 });

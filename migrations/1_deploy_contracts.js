@@ -15,7 +15,7 @@ module.exports = function (deployer) {
     await deployer.deploy(
       ShitFarm, // The contract to deploy
       ShitTokenInstance.address, // The address of shit token (reward token)
-      "10000000000000000000", // The amount of reward token to dist per block -- 18 DP
+      "20000000000000000", // The amount of reward token to dist per block -- 18 DP -- set to 0.02
       currentBlock + 100 // Starting block
     );
     // ShitFarm instance
