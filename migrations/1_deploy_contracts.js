@@ -1,27 +1,27 @@
 require("dotenv").config({ path: "../.env" });
-const ShitFarm = artifacts.require("ShitFarm");
-const ShitToken = artifacts.require("ShitToken");
+const ShtfiFarm = artifacts.require("ShtfiFarm");
+const ShtfiToken = artifacts.require("ShtfiToken");
 const MOCKToken = artifacts.require("MockBEP20");
 
 module.exports = function (deployer) {
   deployer.then(async () => {
     const currentBlock = await web3.eth.getBlockNumber();
-    // Deploy SHIT
-    await deployer.deploy(ShitToken);
+    // Deploy SHTFI
+    await deployer.deploy(ShtfiToken);
     // Create an instance of it
-    const ShitTokenInstance = await ShitToken.deployed();
+    const ShtfiTokenInstance = await ShtfiToken.deployed();
 
-    // Deploy ShitFarm
+    // Deploy ShtfiFarm
     await deployer.deploy(
-      ShitFarm, // The contract to deploy
-      ShitTokenInstance.address, // The address of shit token (reward token)
+      ShtfiFarm, // The contract to deploy
+      ShtfiTokenInstance.address, // The address of SHTFI token (reward token)
       "20000000000000000", // The amount of reward token to dist per block -- 18 DP -- set to 0.02
       currentBlock + 100 // Starting block
     );
-    // ShitFarm instance
-    const ShitFarmInstance = await ShitFarm.deployed();
+    // ShtfiFarm instance
+    const ShtfiFarmInstance = await ShtfiFarm.deployed();
     // Set the farm address
-    await ShitTokenInstance.setFarm(ShitFarmInstance.address); // Farm address is the only minter
+    await ShtfiTokenInstance.setFarm(ShtfiFarmInstance.address); // Farm address is the only minter
 
     // Deploy our mock token to test staking
     await deployer.deploy(
@@ -33,7 +33,7 @@ module.exports = function (deployer) {
     // Get the interface
     const MockTokenInterface = await MOCKToken.deployed();
     // Add farm for Mock token
-    await ShitFarmInstance.add(
+    await ShtfiFarmInstance.add(
       50,
       MockTokenInterface.address,
       currentBlock + 100,
